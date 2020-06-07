@@ -1,0 +1,39 @@
+# Credits: Larz60+ @ https://python-forum.io/Thread-Keypress-when-running-a-python-app-in-a-console-on-windows
+from pynput import keyboard
+ 
+class CaptureKeys:
+    last_pressed_key = ''
+    def __init__(self):
+        pass
+ 
+    def on_press(self, key):
+        try:
+            #print('alphanumeric key {0} pressed'.format(key.char))
+            if key.char in ['1','2','3','4','5','6','7','8','9']:
+                self.last_pressed_key = key.char
+                return False
+        except AttributeError:
+            print('special key {0} pressed'.format(key))
+        if key == keyboard.Key.esc:
+            # Stop listener
+            return False
+ 
+    def on_release(self, key):
+        pass
+        #print('{0} released'.format(key))
+        
+ 
+    # Collect events until released
+    def main(self):
+        with keyboard.Listener(
+                on_press=self.on_press,
+                on_release=self.on_release) as listener:
+            listener.join()
+ 
+    def start_listener(self):
+        keyboard.Listener.start
+        self.main()
+
+# if __name__ == 'keycap':
+#     ck = CaptureKeys()
+#     ck.start_listener()
