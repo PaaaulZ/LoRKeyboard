@@ -13,13 +13,12 @@ class Card:
     click_y = -1
     in_hand = True
 
-    def __init__(self, real_x, real_y, card_width, card_height, lor_code, in_hand):
+    def __init__(self, real_x, real_y, card_width, card_height, lor_code):
         self.real_x = real_x
         self.real_y = real_y
         self.lor_code = lor_code
         self.click_x = round(real_x + (card_width / 2))
         self.click_y = real_y + 50 # Fixed number, i don't like it
-        self.in_hand = in_hand
 
 API_HOST = 'http://localhost:21337'
 CARD_POSITION_API_URL = 'http://localhost:21337/positional-rectangles'
@@ -32,12 +31,14 @@ log.setLevel(logging.DEBUG)
 log.addHandler(fh)
 
 def main():
-    get_card_positions()
+    while 1:
+        get_card_positions()
     return
 
 def get_card_positions():
 
-    positions = []
+    positions_hand = []
+    positions_table = []
 
     try:
         r = requests.get(CARD_POSITION_API_URL)
@@ -65,29 +66,47 @@ def get_card_positions():
         real_y_TMP = SCREEN_HEIGHT - rectangle['TopLeftY']
         real_x_TMP = rectangle['TopLeftX']
         if rectangle['CardCode'] != 'face' and rectangle['LocalPlayer'] == True:
-            # Only if it's really a card
-            if is_card_in_hand(real_y_TMP):
-                positions.append(Card(real_x_TMP, real_y_TMP, rectangle['Width'], rectangle['Height'], rectangle['CardCode']))
+            if is_card_in_hand(real_y_TMP, SCREEN_HEIGHT):
+                positions_hand.append(Card(real_x_TMP, real_y_TMP, rectangle['Width'], rectangle['Height'], rectangle['CardCode']))
             else:
-                positions.append(Card(real_x_TMP, real_y_TMP, rectangle['Width'], rectangle['Height'], rectangle['CardCode']))
+                positions_table.append(Card(real_x_TMP, real_y_TMP, rectangle['Width'], rectangle['Height'], rectangle['CardCode']))
+
+    if not positions_hand and not positions_table:
+        print("returning")
+        return
 
     # Sort cards left to right
-    positions.sort(key=lambda x: x.real_x, reverse=False)
-    print_positions(positions)
-    #move_card(positions,'01NX012')
+    positions_hand.sort(key=lambda x: x.real_x, reverse=False)
+    positions_table.sort(key=lambda x: x.real_x, reverse=False)
+    
+    print("HAND: ")
+    print_positions(positions_hand)
+    print("TABLE: ")
+    print_positions(positions_table)
     
     ck = CaptureKeys()
     ck.start_listener()
     
+    if ck.last_pressed_key == '':
+        return
+
     requested_card = int(ck.last_pressed_key) - 1
 
-    #print(f"Pressed: {ck.last_pressed_key}")
+    if ck.hand_or_table:
+        positions = positions_table
+    else:
+        positions = positions_hand
 
     if requested_card > len(positions):
         log.error(f"Card number {int(requested_card)} is not valid in this state.")
     else:
-        move_card(positions,positions[requested_card].lor_code, SCREEN_WIDTH, SCREEN_HEIGHT)
+        if ck.move_or_click:
+            click_card(positions, positions[requested_card].lor_code, SCREEN_WIDTH, SCREEN_HEIGHT)
+        else:
+            move_card(positions, positions[requested_card].lor_code, SCREEN_WIDTH, SCREEN_HEIGHT)
 
+
+    # TODO: Fix blocking with more than one card
     return
 
 
@@ -101,10 +120,17 @@ def print_positions(positions):
 def move_card(positions, lor_code, screen_width, screen_height):
 
     for position in positions:
-        # test
         if position.lor_code == lor_code:
             pywinauto.mouse.press(button='left', coords=(position.click_x, position.click_y))
-            pywinauto.mouse.release(button='left', coords=(screen_width / 2, screen_height / 2))
+            pywinauto.mouse.release(button='left', coords=(int(screen_width / 2), int(screen_height / 2)))
+
+    return
+
+def click_card(positions, lor_code, screen_width, screen_height):
+
+    for position in positions:
+        if position.lor_code == lor_code:
+            pywinauto.mouse.click(button='left', coords=(position.click_x, position.click_y))
 
     return
 
@@ -114,3 +140,4 @@ def is_card_in_hand(real_y, screen_height):
 
 if __name__ == '__main__':
     main()
+

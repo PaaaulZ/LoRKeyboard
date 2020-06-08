@@ -3,12 +3,15 @@ from pynput import keyboard
  
 class CaptureKeys:
     last_pressed_key = ''
+    hand_or_table = False
+    move_or_click = False
+
     def __init__(self):
         pass
  
     def on_press(self, key):
         try:
-            #print('alphanumeric key {0} pressed'.format(key.char))
+        #print('alphanumeric key {0} pressed'.format(key.char))
             if key.char in ['1','2','3','4','5','6','7','8','9']:
                 self.last_pressed_key = key.char
                 return False
@@ -17,6 +20,19 @@ class CaptureKeys:
         if key == keyboard.Key.esc:
             # Stop listener
             return False
+        elif key == keyboard.Key.shift:
+            self.hand_or_table = not self.hand_or_table
+            if self.hand_or_table:
+                print("[DEBUG] Selecting TABLE cards")
+            else:
+                print("[DEBUG] Selecting HAND cards")
+        elif key == keyboard.Key.ctrl:
+            self.move_or_click = not self.move_or_click
+            if self.move_or_click:
+                print("[DEBUG] Clicking")
+            else:
+                print("[DEBUG] Moving")
+
  
     def on_release(self, key):
         pass
