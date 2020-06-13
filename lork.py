@@ -12,13 +12,17 @@ class Card:
     click_x = -1
     click_y = -1
     in_hand = True
+    width = -1
+    height = -1
 
     def __init__(self, real_x, real_y, card_width, card_height, lor_code):
         self.real_x = real_x
         self.real_y = real_y
         self.lor_code = lor_code
         self.click_x = round(real_x + (card_width / 2))
-        self.click_y = real_y + 50 # Fixed number, i don't like it
+        self.click_y = real_y + 50 # TODO: Change this fixed number with some sort of calculation
+        self.width = card_width
+        self.height = card_height
 
 API_HOST = 'http://localhost:21337'
 CARD_POSITION_API_URL = 'http://localhost:21337/positional-rectangles'
@@ -39,6 +43,7 @@ def get_card_positions():
 
     positions_hand = []
     positions_table = []
+    positions_attacking_blocking = []
 
     try:
         r = requests.get(CARD_POSITION_API_URL)
@@ -66,10 +71,14 @@ def get_card_positions():
         real_y_TMP = SCREEN_HEIGHT - rectangle['TopLeftY']
         real_x_TMP = rectangle['TopLeftX']
         if rectangle['CardCode'] != 'face' and rectangle['LocalPlayer'] == True:
-            if is_card_in_hand(real_y_TMP, SCREEN_HEIGHT):
-                positions_hand.append(Card(real_x_TMP, real_y_TMP, rectangle['Width'], rectangle['Height'], rectangle['CardCode']))
+            cardTMP = Card(real_x_TMP, real_y_TMP, rectangle['Width'], rectangle['Height'], rectangle['CardCode'])
+            if is_card_vertical(cardTMP):
+                if is_card_in_hand(cardTMP, SCREEN_HEIGHT):
+                    positions_hand.append(cardTMP)
+                else:
+                    positions_table.append(cardTMP)
             else:
-                positions_table.append(Card(real_x_TMP, real_y_TMP, rectangle['Width'], rectangle['Height'], rectangle['CardCode']))
+                positions_attacking_blocking.append(cardTMP)
 
     if not positions_hand and not positions_table:
         print("returning")
@@ -83,6 +92,9 @@ def get_card_positions():
     print_positions(positions_hand)
     print("TABLE: ")
     print_positions(positions_table)
+    print("ATTACKING/BLOCKING: ")
+    print_positions(positions_attacking_blocking)
+    print("----------------------------------------------------")
     
     ck = CaptureKeys()
     ck.start_listener()
@@ -123,6 +135,8 @@ def move_card(positions, lor_code, screen_width, screen_height):
         if position.lor_code == lor_code:
             pywinauto.mouse.press(button='left', coords=(position.click_x, position.click_y))
             pywinauto.mouse.release(button='left', coords=(int(screen_width / 2), int(screen_height / 2)))
+            # HACK: Move mouse "out of the screen" so it doesn't hover on cards
+            pywinauto.mouse.move(coords=(1,1))
 
     return
 
@@ -131,12 +145,18 @@ def click_card(positions, lor_code, screen_width, screen_height):
     for position in positions:
         if position.lor_code == lor_code:
             pywinauto.mouse.click(button='left', coords=(position.click_x, position.click_y))
+    # HACK: Move mouse "out of the screen" so it doesn't hover on cards
+    pywinauto.mouse.move(coords=(1,1))
 
     return
 
-def is_card_in_hand(real_y, screen_height):
+def is_card_in_hand(card, screen_height):
     # TODO: Calculate this
-    return real_y >= (screen_height - 200)
+    return card.real_y >= (screen_height - 100)
+
+def is_card_vertical(card):
+    #print(f"CARD {card.lor_code} is vertical: {card.height > card.width}")
+    return card.height > card.width
 
 if __name__ == '__main__':
     main()
