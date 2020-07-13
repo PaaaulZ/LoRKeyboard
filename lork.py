@@ -8,8 +8,11 @@ import win32gui
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from time import sleep
-from keycap import CaptureKeys
 from PIL import Image, ImageGrab
+
+from pynput import keyboard
+import lork
+# Credits: Larz60+ @ https://python-forum.io/Thread-Keypress-when-running-a-python-app-in-a-console-on-windows
 
 API_HOST = 'http://localhost:21337'
 CARD_POSITION_API_URL = 'http://localhost:21337/positional-rectangles'
@@ -19,6 +22,8 @@ SCREEN_WIDTH, SCREEN_HEIGHT = 0, 0
 ALLIED_NEXUS_POSITION = (0, 0)
 ENEMY_NEXUS_POSITION = (0, 0)
 NEXUS_SIZE = (0, 0)
+
+all_cards = None
 
 class Card:
     real_x = -1
@@ -46,6 +51,78 @@ class Card:
         self.original_y = original_y
         self.is_vertical = is_card_vertical(self)
         self.is_allied = is_allied
+        return
+
+class CaptureKeys:
+
+    ALLY_INDEX = 0
+    ENEMY_INDEX = 1
+
+    HAND_INDEX = 0
+    TABLE_INDEX = 1
+    ATTACKORBLOCK_INDEX = 2
+
+    quit = False
+    current_positions = []
+   
+    def __init__(self):
+        pass
+ 
+    def on_press(self, key):
+        try:
+        #print('alphanumeric key {0} pressed'.format(key.char))
+            if key.char in ['1','2','3','4','5','6','7','8']:
+                # Only cards
+                requested_index = int(key.char) - 1
+                if requested_index > len(self.current_positions):
+                    log.warning("Invalid index requested!")
+                    return False
+                move_card(self.current_positions,self.current_positions[requested_index].lor_code)
+                return False
+            elif key.char == 'u':
+                main()
+                log.info("Using HAND cards")
+                self.current_positions = all_cards[self.ALLY_INDEX][self.HAND_INDEX]
+                return False
+            elif key.char == 'r':
+                draw_rectangles(all_cards)
+                return False
+            elif key.char == 's':
+                log.info("Using HAND cards")
+                self.current_positions = all_cards[self.ALLY_INDEX][self.HAND_INDEX]
+                return False
+        except AttributeError:
+            #print('special key {0} pressed'.format(key))
+            if key == keyboard.Key.esc:
+                # Stop listener
+                #print('special key {0} pressed'.format(key))
+                self.quit = True
+                return True
+            elif key == keyboard.Key.ctrl_l:
+                self.current_positions = all_cards[self.ALLY_INDEX][self.TABLE_INDEX]
+                log.info("Using TABLE cards")
+            elif key == keyboard.Key.alt_l:
+                self.current_positions = all_cards[self.ALLY_INDEX][self.ATTACKORBLOCK_INDEX]
+                log.info("Using ATTACKING/BLOCKING cards")
+            elif key == keyboard.Key.shift:
+                # TODO: Enemy 
+                log.info("Using ENEMY cards")
+                return False
+
+ 
+    def on_release(self, key):
+        pass
+        #print('{0} released'.format(key))
+        
+ 
+    # Collect events until released
+    def main(self):
+        with keyboard.Listener(on_press=self.on_press, on_release=self.on_release) as listener:
+            listener.join()
+ 
+    def start_listener(self):
+        keyboard.Listener.start
+        self.main()
 
         
 # Setup logging
@@ -57,9 +134,9 @@ log.addHandler(fh)
 
 
 def main():
+    global all_cards
     rectangles = get_rectangles_json()
     all_cards = get_card_positions(rectangles)
-    draw_rectangles(all_cards)
     return
 
 def get_rectangles_json():
@@ -330,5 +407,12 @@ def draw_rectangles(all_cards):
     
     return
 
+
 if __name__ == '__main__':
-    main()
+
+    ck = CaptureKeys()
+    while not ck.quit:
+        log.info("Waiting for key press")
+        ck.start_listener()
+    
+    # main()
