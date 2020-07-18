@@ -62,32 +62,66 @@ class CaptureKeys:
     TABLE_INDEX = 1
     ATTACKORBLOCK_INDEX = 2
 
-    quit = False
     current_positions = []
+    blocking = False
+    index_to_block = 0 # Which card I will block by pressing [1-8]? If card cannot be blocked you'll need to try anyway to skip it.
+    only_click = False
+
+    quit = False
+    crash = 0
    
     def __init__(self):
         pass
  
     def on_press(self, key):
+        # On key press!
         try:
-        #print('alphanumeric key {0} pressed'.format(key.char))
+            # log.debug('alphanumeric key {0} pressed'.format(key.char))
             if key.char in ['1','2','3','4','5','6','7','8']:
                 # Only cards
                 requested_index = int(key.char) - 1
                 if requested_index > len(self.current_positions):
                     log.warning("Invalid index requested!")
                     return False
-                move_card(self.current_positions,self.current_positions[requested_index].lor_code)
+                if not self.blocking and not self.only_click:
+                    # I'm trying to play a card (from HAND to TABLE)
+                    move_card(self.current_positions,self.current_positions[requested_index].lor_code)
+                else:
+                    if self.blocking:
+                        # I'm blocking, iterate through cards
+                        if len(all_cards[self.ENEMY_INDEX][self.ATTACKORBLOCK_INDEX]) == 0:
+                            log.error("Enemy is not attacking, can't block!")
+                            return False
+                        else:
+                            # From left to right, move the card I selected with [1-8] under the "index_to_block" enemy attacking card.
+                            move_card_under_card(self.current_positions,self.current_positions[requested_index].lor_code, all_cards[self.ENEMY_INDEX][self.ATTACKORBLOCK_INDEX][self.index_to_block])
+                            self.index_to_block += 1
+                            log.debug(f"INDEX TO BLOCK IS NOW {self.index_to_block}")
+                    elif self.only_click:
+                        # Don't drag the card, just click where I tell you. Mostly used for buffing/debuffing cards.
+                        # TODO: Only click will have to become it's own key (Alt GR?)
+                        click_card(self.current_positions,self.current_positions[requested_index].lor_code)
+                        self.only_click = False
                 return False
+            elif key.char == '9':
+                log.debug("Clicking ENEMY nexus")
+                click_nexus(False)
+            elif key.char == '0':
+                log.debug("Clicking ALLIED nexus")
+                click_nexus(True)
             elif key.char == 'u':
                 main()
+                # Restore standard card selection
                 log.info("Using HAND cards")
                 self.current_positions = all_cards[self.ALLY_INDEX][self.HAND_INDEX]
+                self.blocking = False
                 return False
             elif key.char == 'r':
                 draw_rectangles(all_cards)
                 return False
             elif key.char == 's':
+                # Like 'u' but does not update. Used to rollback if you press Left CTRL or other keys by mistake.
+                # You could just update but this is slightly faster.
                 log.info("Using HAND cards")
                 self.current_positions = all_cards[self.ALLY_INDEX][self.HAND_INDEX]
                 return False
@@ -96,6 +130,7 @@ class CaptureKeys:
             if key == keyboard.Key.esc:
                 # Stop listener
                 #print('special key {0} pressed'.format(key))
+                self.crash = 777 / self.crash # HACK: I DON'T UNDERSTAND HOW TO QUIT, PLEASE DON'T LOOK AT THIS
                 self.quit = True
                 return True
             elif key == keyboard.Key.ctrl_l:
@@ -103,16 +138,22 @@ class CaptureKeys:
                 log.info("Using TABLE cards")
             elif key == keyboard.Key.alt_l:
                 self.current_positions = all_cards[self.ALLY_INDEX][self.ATTACKORBLOCK_INDEX]
+                self.only_click = True
                 log.info("Using ATTACKING/BLOCKING cards")
+            elif key == keyboard.Key.caps_lock:
+                self.current_positions = all_cards[self.ALLY_INDEX][self.TABLE_INDEX]
+                self.blocking = not self.blocking
+                log.info("Using TABLE cards for BLOCKING") if self.blocking else log.info("Ending blocking phase, please update")
+                if (self.index_to_block > 1):
+                    self.index_to_block = 0
             elif key == keyboard.Key.shift:
-                # TODO: Enemy 
                 log.info("Using ENEMY cards")
-                return False
+                self.only_click = True
+                self.current_positions = all_cards[self.ENEMY_INDEX][self.TABLE_INDEX]
 
  
     def on_release(self, key):
         pass
-        #print('{0} released'.format(key))
         
  
     # Collect events until released
@@ -198,11 +239,11 @@ def get_card_positions(rectangles):
                     ALLIED_NEXUS_POSITION = (rectangle['TopLeftX'], SCREEN_HEIGHT - rectangle['TopLeftY'])
                     NEXUS_SIZE = (rectangle['Width'], rectangle['Height'])
                     # 1 nexus size is enough
-                    log.info("Got ALLIED nexus size and position")
+                    log.debug("Got ALLIED nexus size and position")
                 else:
-                    # enemy nexus
+                    # Enemy nexus
                     ENEMY_NEXUS_POSITION = (rectangle['TopLeftX'], SCREEN_HEIGHT - rectangle['TopLeftY'])         
-                    log.info("Got ENEMY nexus size and position")
+                    log.debug("Got ENEMY nexus size and position")
 
             if rectangle['CardCode'] != 'face':
                 cardTMP = Card(real_x_TMP, real_y_TMP, rectangle['Width'], rectangle['Height'], rectangle['CardCode'], rectangle['TopLeftX'], rectangle['TopLeftY'], rectangle['LocalPlayer'])
@@ -215,7 +256,7 @@ def get_card_positions(rectangles):
                     else:
                         # If card is horizontal means that is attacking or blocking
                         positions_attacking_blocking.append(cardTMP)
-                    log.info("Got ALLIED cards")
+                    log.debug("Got ALLIED cards")
                 elif not rectangle['LocalPlayer'] and i == 1:
                     if cardTMP.is_vertical:
                         if is_card_in_hand(cardTMP):
@@ -225,9 +266,9 @@ def get_card_positions(rectangles):
                     else:
                         # If card is horizontal means that is attacking or blocking
                         positions_attacking_blocking_enemy.append(cardTMP)
-                    log.info("Got ENEMY cards")
+                    log.debug("Got ENEMY cards")
 
-        # Sort cards from left to right (to generate the indexes that make sense)
+        # Sort cards from left to right (to generate indexes that make sense)
         positions_hand.sort(key=lambda x: x.real_x, reverse=False)
         positions_table.sort(key=lambda x: x.real_x, reverse=False)
         positions_attacking_blocking.sort(key=lambda x: x.real_x, reverse=False)
@@ -250,39 +291,6 @@ def get_card_positions(rectangles):
         local_player = False
 
     return [allied_cards, enemy_cards]
-    
-    # print("HAND: ")
-    # print_positions(positions_hand)
-    # print("TABLE: ")
-    # print_positions(positions_table)
-    # print("ATTACKING/BLOCKING: ")
-    # print_positions(positions_attacking_blocking)
-    # print("----------------------------------------------------")
-    
-    # ck = CaptureKeys()
-    # ck.start_listener()
-    
-    # if ck.last_pressed_key == '':
-    #     return
-
-    # requested_card = int(ck.last_pressed_key) - 1
-
-    # if ck.hand_or_table:
-    #     positions = positions_table
-    # else:
-    #     positions = positions_hand
-
-    # if requested_card > len(positions):
-    #     log.error(f"Card number {int(requested_card)} is not valid in this state.")
-    # else:
-    #     if ck.move_or_click:
-    #         click_card(positions, positions[requested_card].lor_code)
-    #     else:
-    #         move_card(positions, positions[requested_card].lor_code)
-
-
-    # TODO: Fix blocking with more than one card
-    # return
 
 
 def print_positions(positions):
@@ -292,8 +300,19 @@ def print_positions(positions):
 
     return
 
-def move_card(positions, lor_code):
+def click_nexus(allied):
+    # ! This does not work, it's driving me insane. It acts like I ALT + TAB out of the game, mouse goes too fast?
+    if allied:
+        pywinauto.mouse.move((ALLIED_NEXUS_POSITION[0] + 50, ALLIED_NEXUS_POSITION[1] + 50))
+        sleep(2)
+        pywinauto.mouse.press(button='left', coords=(ALLIED_NEXUS_POSITION[0] + 50, ALLIED_NEXUS_POSITION[1] + 50))
+    else:
+        pywinauto.mouse.move((ENEMY_NEXUS_POSITION[0] + 50, ENEMY_NEXUS_POSITION[1] + 50))
+        sleep(2)
+        pywinauto.mouse.press(button='left', coords=(ENEMY_NEXUS_POSITION[0] + 50, ENEMY_NEXUS_POSITION[1] + 50))
 
+def move_card(positions, lor_code):
+    # Move card with code lor_code from current position to the center of the screen (play a card/attack).
     for position in positions:
         if position.lor_code == lor_code:
             pywinauto.mouse.press(button='left', coords=(position.click_x, position.click_y))
@@ -303,8 +322,22 @@ def move_card(positions, lor_code):
 
     return
 
-def click_card(positions, lor_code):
+def move_card_under_card(positions, lor_code, destination_card):
+    # Moves a card from the hand to under another card. Used for blocking.
+    # TODO: Fix harcoded offsets
 
+    for position in positions:
+        if position.lor_code == lor_code:
+            pywinauto.mouse.press(button='left', coords=(position.click_x, position.click_y))
+            pywinauto.mouse.release(button='left', coords=((destination_card.real_x + 50), destination_card.real_y + 300))
+            log.debug(f"MOVING {position.lor_code} to {((destination_card.real_x + 50), destination_card.real_y + 300)}")
+            # HACK: Move mouse "out of the screen" so it doesn't hover on cards
+            pywinauto.mouse.move(coords=(1,1))
+
+    return
+
+def click_card(positions, lor_code):
+    # Clicks the card with code lor_code
     for position in positions:
         if position.lor_code == lor_code:
             pywinauto.mouse.click(button='left', coords=(position.click_x, position.click_y))
@@ -314,11 +347,10 @@ def click_card(positions, lor_code):
     return
 
 def is_card_in_hand(card):
-    # TODO: Calculate this
+    # TODO: Calculate this instead of fixed offset.
     return card.real_y >= (SCREEN_HEIGHT - 100)
 
 def is_card_vertical(card):
-    #print(f"CARD {card.lor_code} is vertical: {card.height > card.width}")
     return card.height > card.width
 
 def get_screenshot():
@@ -358,7 +390,7 @@ def draw_rectangles(all_cards):
 
     keys = ['', 'CTRL + ', 'ALT + ']
 
-    log.info("Drawing rectangles around the cards")
+    log.debug("Drawing rectangles around the cards")
 
     for i in range(2):
         # Ally / enemy loop
@@ -414,5 +446,4 @@ if __name__ == '__main__':
     while not ck.quit:
         log.info("Waiting for key press")
         ck.start_listener()
-    
-    # main()
+    exit(0)
